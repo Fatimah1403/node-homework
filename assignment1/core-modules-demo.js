@@ -13,9 +13,8 @@ console.log('CPU:', os.cpus()[0].model);
 console.log('Total Memory:', os.totalmem());
 
 // Path module
-console.log('Current working directory:', process.cwd());
-console.log('Path separator:', path.sep);
-
+const joinedPath = path.join(sampleFilesDir, 'folder', 'file.txt');
+console.log('Joined path:', joinedPath);
 // fs.promises API
 const demoFilePath = path.join(sampleFilesDir, 'demo.txt');
 
@@ -38,3 +37,27 @@ demonstrateFsPromises();
 
 
 // Streams for large files- log first 40 chars of each chunk
+const largeFilePath = path.join(sampleFilesDir, 'largefile.txt');
+
+const lines = [];
+for (let i = 1; i <= 100; i++) {
+  lines.push(`This is line ${i} of the large file`);
+}
+fs.writeFileSync(largeFilePath, lines.join('\n'), 'utf8');
+
+const readStream = fs.createReadStream(largeFilePath, {
+  encoding: 'utf8',
+  highWaterMark: 1024, // Read in chunks of 1024 bytes
+})
+
+readStream.on('data', (chunk) => {
+  console.log('Read chunk:', chunk.slice(0, 40));
+});
+
+readStream.on('end', () => {
+  console.log('Finished reading large file with streams.');
+});
+
+readStream.on('error', (err) => {
+    console.error('Stream error:', err);
+});

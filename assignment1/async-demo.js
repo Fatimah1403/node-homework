@@ -13,8 +13,7 @@ fs.readFile(filePath, 'utf8', (err, data) => {
     console.log('Callback error:', err.message);
     return;
   }
-  console.log(data);
-})
+  console.log('Callback:', data);})
 
 
   // Callback hell example (test and leave it in comments):
@@ -44,7 +43,7 @@ fs.readFile(filePath, 'utf8', (err, data) => {
   }
   readFilePromise(filePath)
     .then((data) => {
-      console.log(data);
+      console.log('Promise:', data);
     })
     .catch((err) => {
       console.log('Promise error:', err.message);
@@ -54,7 +53,7 @@ fs.readFile(filePath, 'utf8', (err, data) => {
     async function readFileAsync(filePath) {
       try {
         const data = await readFilePromise(filePath);
-        console.log(data);
+        console.log('Async/Await:', data);
       } catch (err) {
         console.log('Async/Await error:', err.message);
       }
