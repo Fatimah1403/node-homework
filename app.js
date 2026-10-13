@@ -5,6 +5,7 @@ const timeRouter = require("./routes/timeRoutes");
 const app = express();
 
 app.use(express.json());
+
 app.use("/api", timeRouter);
 
 
