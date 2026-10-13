@@ -67,18 +67,6 @@ const server = http.createServer((req, res) => {
       }
     });
 
-    // Process the complete request body
-    req.on("end", () => {
-      const parsedBody = JSON.parse(body);
-
-      res.writeHead(200, { "Content-Type": "application/json" });
-
-      res.end(
-        JSON.stringify({
-          weReceived: parsedBody,
-        }),
-      );
-    });
 
   // Optional Task 6: Handle unknown routes
   } else {
