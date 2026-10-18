@@ -1,14 +1,47 @@
 const express = require("express");
 const dogsRouter = require("./routes/dogs");
 
+const  { randomUUID } = require("crypto");
+const path = require("path");
+
 const app = express();
 
+
+app.use(express.json());
+
 // Assignment 3b and 3c ask you to add middleware in this file.
+app.use((req, res, next) => {
+  req.requestId = randomUUID();
+  res.setHeader("X-Request-Id", req.requestId);
+  next();
+})
+app.use((req, res, next) => {
+  console.log(
+    `[${new Date().toISOString()}]: ${req.method} ${req.path} (${req.requestId})`
+  )
+  next();
+})
 
-
-
+app.use(express.static(path.join(__dirname, "public")));
 
 app.use("/", dogsRouter);// Do not remove this line
+
+
+app.use((req, res) => {
+  return res.status(404).json({
+    error: "Route not found",
+    requestId: req.requestId,
+  })
+})
+
+app.use((err, req, res, next) => {
+  console.error(err);
+
+  res.status(500).json({
+    error: "Internal Server Error",
+    requestId: req.requestId,
+  });
+});
 
 
 if (require.main === module) {
