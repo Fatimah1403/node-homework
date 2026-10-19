@@ -10,17 +10,6 @@ const app = express();
 global.user_id = null;
 global.users = [];
 global.tasks = [];
-
-app.use(express.json());
-
-app.use("/api", timeRouter);
-app.use("/api/users", userRouter);
-
-app.use(notFound);
-app.use(errorHandler);
-
-
-
 app.get("/", (req, res) => {
   res.send("Hello, World!");
 });
@@ -35,6 +24,14 @@ app.all("/{*splat}", (req, res) => {
     message: `No route found for ${req.method} ${req.path}`,
   });
 });
+app.use(express.json());
+
+app.use("/api", timeRouter);
+app.use("/api/users", userRouter);
+
+app.use(notFound);
+app.use(errorHandler);
+
 
 const port = process.env.PORT || 3000;
 
