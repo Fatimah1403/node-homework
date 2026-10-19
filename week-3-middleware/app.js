@@ -7,7 +7,6 @@ const path = require("path");
 const app = express();
 
 
-app.use(express.json());
 
 // Assignment 3b and 3c ask you to add middleware in this file.
 app.use((req, res, next) => {
@@ -22,7 +21,29 @@ app.use((req, res, next) => {
   next();
 })
 
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  next();
+})
+
+
+app.use(express.json({ limit: "1mb" }));
+
+
 app.use(express.static(path.join(__dirname, "public")));
+
+app.use((req, res, next) => {
+  const methodsWithBody = ["POST", "PUT", "PATCH"];
+  if (methodsWithBody.includes(req.method) && !req.is("application/json")) {
+    return res.status(400).json({
+      error: "Content-Type must be application/json",
+      requestId: req.requestId,
+    })
+  }
+  next();
+});
 
 app.use("/", dogsRouter);// Do not remove this line
 
@@ -34,11 +55,18 @@ app.use((req, res) => {
   })
 })
 
-app.use((err, req, res, next) => {
-  console.error(err);
 
-  res.status(500).json({
-    error: "Internal Server Error",
+app.use((err, req, res, next) => {
+  const statusCode = err.statusCode || 500;
+
+  if (statusCode >= 400 && statusCode < 500) {
+    console.warn(`WARN: ${err.name} - ${err.message}`);
+  } else {
+    console.error(`ERROR: ${err.name} - ${err.message}`);
+  }
+
+  return res.status(statusCode).json({
+    error: statusCode === 500 ? "Internal Server Error" : err.message,
     requestId: req.requestId,
   });
 });
