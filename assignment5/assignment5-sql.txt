@@ -8,4 +8,4 @@ INSERT INTO orders (order_id, customer_id, employee_id, date) VALUES (99998, 16,
 INSERT INTO line_items (line_item_id, order_id, product_id, quantity) VALUES (99981, 99998, 23, 1), (99982, 99998, 24, 1), (99983, 99998, 25, 1), (99984, 99998, 26, 1), (99985, 99998, 27, 1);
 COMMIT;
 SELECT * FROM line_items WHERE order_id = 99998;
-SELECT e.last_name, COUNT(o.order_id) AS order_count FROM employees e JOIN orders o ON e.employee_id = o.employee_id GROUP BY e.employee_id, e.last_name HAVING COUNT(o.order_id) > 5 ORDER BY e.last_name;
+SELECT e.first_name, e.last_name, COUNT(o.order_id) AS order_count FROM employees e JOIN orders o ON e.employee_id = o.employee_id GROUP BY e.employee_id, e.first_name, e.last_name HAVING COUNT(o.order_id) > 5 ORDER BY e.last_name;
