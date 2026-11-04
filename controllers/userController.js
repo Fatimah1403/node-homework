@@ -2,6 +2,7 @@
 const crypto = require("crypto");
 const util = require("util");
 const { userSchema } = require("../validation/userSchema");
+const pool = require("../db/pg-pool");
 
 const scrypt = util.promisify(crypto.scrypt);
 
@@ -44,6 +45,7 @@ async function comparePassword(password, storedHash) {
 }
 
 // REGISTER
+
 async function register(req, res, next) {
   try {
     // Validate the request before storing user data.
@@ -55,36 +57,43 @@ async function register(req, res, next) {
     if (error) {
       return res.status(400).json({
         message: error.message,
+        details: error.details,
       });
     }
 
     const { name, email, password } = value;
-
-    // Prevent duplicate email registrations.
-    const existingUser = global.users.find(
-      (user) => user.email === email
-    );
-
-    if (existingUser) {
-      return res.status(400).json({
-        message: "Email already registered.",
-      });
-    }
+    let result = null;
 
     // Hash the password before saving the user.
     const hashedPassword = await hashPassword(password);
 
-    const newUser = {
-      id: global.users.length + 1,
-      name,
-      email,
-      hashedPassword,
-    };
+    try {
+      result = await pool.query(
+        `INSERT INTO users (email, name, hashed_password)
+         VALUES ($1, $2, $3)
+         RETURNING id, email, name`,
+        [email, name, hashedPassword]
+      );
+    } catch (error) {
+      // PostgreSQL error 23505 means a UNIQUE constraint was violated.
+      if (error.code === "23505") {
+        return res.status(400).json({
+          message: "Email already registered.",
+        });
+      }
 
-    global.users.push(newUser);
+      // Pass unexpected database errors to Express.
+      if (typeof next === "function") {
+        return next(error);
+      }
 
-    // Store the user object for task ownership checks.
-    global.user_id = newUser;
+      throw error;
+    }
+
+    const newUser = result.rows[0];
+
+    // Store the user ID for task ownership checks.
+    global.user_id = newUser.id;
 
     return res.status(201).json({
       name: newUser.name,
@@ -94,6 +103,7 @@ async function register(req, res, next) {
     if (typeof next === "function") {
       return next(error);
     }
+
     throw error;
   }
 }
@@ -110,14 +120,17 @@ async function logon(req, res, next) {
       });
     }
 
-    // Find the user by email.
-    const user = global.users.find(
-      (u) => u.email === email.trim().toLowerCase()
+    // Find the user in PostgreSQL  by email.
+      const result = await pool.query(
+      "SELECT * FROM users WHERE email = $1",
+      [email.trim().toLowerCase()]
     );
+
+    const user = result.rows[0];
 
     // Compare the password with the stored hash.
     const goodCredentials = user
-      ? await comparePassword(password, user.hashedPassword)
+      ? await comparePassword(password, user.hashed_password)
       : false;
 
     if (!goodCredentials) {
@@ -126,7 +139,7 @@ async function logon(req, res, next) {
       });
     }
 
-    global.user_id = user;
+    global.user_id = user.id;
 
     return res.status(200).json({
       name: user.name,
