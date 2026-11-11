@@ -83,12 +83,14 @@ exports.show = async (req, res, next) => {
     }
 
     // Match both task ID and logged-in user's ID.
-    const task = await prisma.task.findFirst({
+    const task = await prisma.task.findUnique({
       where: {
-        id: taskId,
-        userId: global.user_id,
+        id_userId: {
+          id: taskId,
+          userId: global.user_id,
+        },
       },
-    });
+  });
 
     if (!task) {
       return res.status(404).json({
@@ -107,6 +109,7 @@ exports.show = async (req, res, next) => {
 };
 
 // 4. UPDATE TASK: PATCH /api/tasks/:id
+
 exports.update = async (req, res, next) => {
   try {
     const { error, value } = patchTaskSchema.validate(
@@ -145,30 +148,29 @@ exports.update = async (req, res, next) => {
       });
     }
 
-    // Update only the task belonging to the logged-in user.
-    const result = await prisma.task.updateMany({
-      where: {
-        id: taskId,
-        userId: global.user_id,
-      },
-      data: updates,
-    });
-
-    if (result.count === 0) {
-      return res.status(404).json({
-        message: "Task not found.",
+    try {
+      // Update only the task belonging to the logged-in user.
+      const task = await prisma.task.update({
+        where: {
+          id_userId: {
+            id: taskId,
+            userId: global.user_id,
+          },
+        },
+        data: updates,
       });
+
+      return res.status(200).json(formatTask(task));
+    } catch (error) {
+      // P2025 means no matching record was found.
+      if (error.code === "P2025") {
+        return res.status(404).json({
+          message: "Task not found.",
+        });
+      }
+
+      throw error;
     }
-
-    // Retrieve the updated task to preserve the API response.
-    const task = await prisma.task.findFirst({
-      where: {
-        id: taskId,
-        userId: global.user_id,
-      },
-    });
-
-    return res.status(200).json(formatTask(task));
   } catch (error) {
     if (typeof next === "function") {
       return next(error);
@@ -178,7 +180,9 @@ exports.update = async (req, res, next) => {
   }
 };
 
+
 // 5. DELETE TASK: DELETE /api/tasks/:id
+
 exports.deleteTask = async (req, res, next) => {
   try {
     // Validate the task ID.
@@ -190,35 +194,28 @@ exports.deleteTask = async (req, res, next) => {
       });
     }
 
-    // Find the task owned by this user.
-    const task = await prisma.task.findFirst({
-      where: {
-        id: taskId,
-        userId: global.user_id,
-      },
-    });
-
-    if (!task) {
-      return res.status(404).json({
-        message: "Task not found.",
+    try {
+      // Delete only the task belonging to the logged-in user.
+      const deletedTask = await prisma.task.delete({
+        where: {
+          id_userId: {
+            id: taskId,
+            userId: global.user_id,
+          },
+        },
       });
+
+      return res.status(200).json(formatTask(deletedTask));
+    } catch (error) {
+      // P2025 means the task does not exist or belongs to another user.
+      if (error.code === "P2025") {
+        return res.status(404).json({
+          message: "Task not found.",
+        });
+      }
+
+      throw error;
     }
-
-    // Delete only the task belonging to the logged-in user.
-    const result = await prisma.task.deleteMany({
-      where: {
-        id: taskId,
-        userId: global.user_id,
-      },
-    });
-
-    if (result.count === 0) {
-      return res.status(404).json({
-        message: "Task not found.",
-      });
-    }
-
-    return res.status(200).json(formatTask(task));
   } catch (error) {
     if (typeof next === "function") {
       return next(error);
@@ -227,3 +224,4 @@ exports.deleteTask = async (req, res, next) => {
     throw error;
   }
 };
+
