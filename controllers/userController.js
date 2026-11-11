@@ -2,7 +2,7 @@
 const crypto = require("crypto");
 const util = require("util");
 const { userSchema } = require("../validation/userSchema");
-const pool = require("../db/pg-pool");
+const prisma = require("../db/prisma");
 
 const scrypt = util.promisify(crypto.scrypt);
 
@@ -62,21 +62,29 @@ async function register(req, res, next) {
     }
 
     const { name, email, password } = value;
-    let result = null;
-
     // Hash the password before saving the user.
     const hashedPassword = await hashPassword(password);
 
-    try {
-      result = await pool.query(
-        `INSERT INTO users (email, name, hashed_password)
-         VALUES ($1, $2, $3)
-         RETURNING id, email, name`,
-        [email, name, hashedPassword]
-      );
+    let newUser;
+
+
+   try {
+      // Create the user using Prisma instead of raw SQL.
+      newUser = await prisma.user.create({
+        data: {
+          email,
+          name,
+          hashedPassword,
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+        },
+      });
     } catch (error) {
-      // PostgreSQL error 23505 means a UNIQUE constraint was violated.
-      if (error.code === "23505") {
+      // Prisma error P2002 means a UNIQUE constraint was violated.
+      if (error.code === "P2002") {
         return res.status(400).json({
           message: "Email already registered.",
         });
@@ -89,8 +97,6 @@ async function register(req, res, next) {
 
       throw error;
     }
-
-    const newUser = result.rows[0];
 
     // Store the user ID for task ownership checks.
     global.user_id = newUser.id;
@@ -113,24 +119,25 @@ async function logon(req, res, next) {
   try {
     const { email, password } = req.body || {};
 
-    if (typeof email !== "string" ||
-        typeof password !== "string") {
+    if (
+      typeof email !== "string" ||
+      typeof password !== "string"
+    ) {
       return res.status(401).json({
         message: "Invalid email or password.",
       });
     }
 
-    // Find the user in PostgreSQL  by email.
-      const result = await pool.query(
-      "SELECT * FROM users WHERE email = $1",
-      [email.trim().toLowerCase()]
-    );
-
-    const user = result.rows[0];
+    // Find the user in PostgreSQL through Prisma by email.
+    const user = await prisma.user.findUnique({
+      where: {
+        email: email.trim().toLowerCase(),
+      },
+    });
 
     // Compare the password with the stored hash.
     const goodCredentials = user
-      ? await comparePassword(password, user.hashed_password)
+      ? await comparePassword(password, user.hashedPassword)
       : false;
 
     if (!goodCredentials) {
@@ -149,6 +156,7 @@ async function logon(req, res, next) {
     if (typeof next === "function") {
       return next(error);
     }
+
     throw error;
   }
 }
@@ -165,8 +173,10 @@ function logoff(req, res, next) {
     if (typeof next === "function") {
       return next(error);
     }
+
     throw error;
   }
 }
+
 
 module.exports = { register, logon, logoff };

@@ -4,7 +4,16 @@ const {
   patchTaskSchema,
 } = require("../validation/taskSchema");
 
-const pool = require("../db/pg-pool");
+const prisma = require("../db/prisma");
+
+// Convert Prisma's camelCase field to the existing API response format.
+function formatTask(task) {
+  return {
+    id: task.id,
+    title: task.title,
+    isCompleted: task.isCompleted,
+  };
+}
 
 // 1. CREATE TASK: POST /api/tasks
 exports.create = async (req, res, next) => {
@@ -17,17 +26,16 @@ exports.create = async (req, res, next) => {
       });
     }
 
-    // Save the task in PostgreSQL.
-    const result = await pool.query(
-      `INSERT INTO tasks (title, is_completed, user_id)
-       VALUES ($1, $2, $3)
-       RETURNING id, title, is_completed`,
-      [value.title, value.isCompleted, global.user_id]
-    );
+    // Save the task in PostgreSQL through Prisma.
+    const newTask = await prisma.task.create({
+      data: {
+        title: value.title,
+        isCompleted: value.isCompleted,
+        userId: global.user_id,
+      },
+    });
 
-    const newTask = result.rows[0];
-
-    return res.status(201).json(newTask);
+    return res.status(201).json(formatTask(newTask));
   } catch (error) {
     if (typeof next === "function") {
       return next(error);
@@ -40,14 +48,11 @@ exports.create = async (req, res, next) => {
 // 2. GET ALL TASKS: GET /api/tasks
 exports.index = async (req, res, next) => {
   try {
-    const result = await pool.query(
-      `SELECT id, title, is_completed
-       FROM tasks
-       WHERE user_id = $1`,
-      [global.user_id]
-    );
-
-    const userTasks = result.rows;
+    const userTasks = await prisma.task.findMany({
+      where: {
+        userId: global.user_id,
+      },
+    });
 
     if (userTasks.length === 0) {
       return res.status(404).json({
@@ -55,7 +60,7 @@ exports.index = async (req, res, next) => {
       });
     }
 
-    return res.status(200).json(userTasks);
+    return res.status(200).json(userTasks.map(formatTask));
   } catch (error) {
     if (typeof next === "function") {
       return next(error);
@@ -78,14 +83,12 @@ exports.show = async (req, res, next) => {
     }
 
     // Match both task ID and logged-in user's ID.
-    const result = await pool.query(
-      `SELECT id, title, is_completed
-       FROM tasks
-       WHERE id = $1 AND user_id = $2`,
-      [taskId, global.user_id]
-    );
-
-    const task = result.rows[0];
+    const task = await prisma.task.findFirst({
+      where: {
+        id: taskId,
+        userId: global.user_id,
+      },
+    });
 
     if (!task) {
       return res.status(404).json({
@@ -93,7 +96,7 @@ exports.show = async (req, res, next) => {
       });
     }
 
-    return res.status(200).json(task);
+    return res.status(200).json(formatTask(task));
   } catch (error) {
     if (typeof next === "function") {
       return next(error);
@@ -125,51 +128,47 @@ exports.update = async (req, res, next) => {
       });
     }
 
-    // Build the SQL update from the validated fields.
-    const updates = [];
-    const values = [];
+    // Build the Prisma update from the validated fields.
+    const updates = {};
 
     if (value.title !== undefined) {
-      values.push(value.title);
-      updates.push(`title = $${values.length}`);
+      updates.title = value.title;
     }
 
     if (value.isCompleted !== undefined) {
-      values.push(value.isCompleted);
-      updates.push(`is_completed = $${values.length}`);
+      updates.isCompleted = value.isCompleted;
     }
 
-    if (updates.length === 0) {
+    if (Object.keys(updates).length === 0) {
       return res.status(400).json({
         message: "No valid fields provided for update.",
       });
     }
 
-    // Find the task belonging to the logged-in user.
-    values.push(taskId);
-    const taskIdPosition = values.length;
+    // Update only the task belonging to the logged-in user.
+    const result = await prisma.task.updateMany({
+      where: {
+        id: taskId,
+        userId: global.user_id,
+      },
+      data: updates,
+    });
 
-    values.push(global.user_id);
-    const userIdPosition = values.length;
-
-    const result = await pool.query(
-      `UPDATE tasks
-       SET ${updates.join(", ")}
-       WHERE id = $${taskIdPosition}
-         AND user_id = $${userIdPosition}
-       RETURNING id, title, is_completed`,
-      values
-    );
-
-    const task = result.rows[0];
-
-    if (!task) {
+    if (result.count === 0) {
       return res.status(404).json({
         message: "Task not found.",
       });
     }
 
-    return res.status(200).json(task);
+    // Retrieve the updated task to preserve the API response.
+    const task = await prisma.task.findFirst({
+      where: {
+        id: taskId,
+        userId: global.user_id,
+      },
+    });
+
+    return res.status(200).json(formatTask(task));
   } catch (error) {
     if (typeof next === "function") {
       return next(error);
@@ -191,23 +190,35 @@ exports.deleteTask = async (req, res, next) => {
       });
     }
 
-    // Find the task owned by this user and delete it.
-    const result = await pool.query(
-      `DELETE FROM tasks
-       WHERE id = $1 AND user_id = $2
-       RETURNING id, title, is_completed`,
-      [taskId, global.user_id]
-    );
+    // Find the task owned by this user.
+    const task = await prisma.task.findFirst({
+      where: {
+        id: taskId,
+        userId: global.user_id,
+      },
+    });
 
-    const deletedTask = result.rows[0];
-
-    if (!deletedTask) {
+    if (!task) {
       return res.status(404).json({
         message: "Task not found.",
       });
     }
 
-    return res.status(200).json(deletedTask);
+    // Delete only the task belonging to the logged-in user.
+    const result = await prisma.task.deleteMany({
+      where: {
+        id: taskId,
+        userId: global.user_id,
+      },
+    });
+
+    if (result.count === 0) {
+      return res.status(404).json({
+        message: "Task not found.",
+      });
+    }
+
+    return res.status(200).json(formatTask(task));
   } catch (error) {
     if (typeof next === "function") {
       return next(error);
