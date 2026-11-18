@@ -8,6 +8,8 @@ const {
   show,
   update,
   deleteTask,
+  bulkCreate,
+
 } = require("../controllers/taskController");
 
 // Create a new task.
@@ -24,5 +26,6 @@ router.patch("/:id", update);
 
 // Delete a task.
 router.delete("/:id", deleteTask);
+router.post("/bulk", bulkCreate);
 
 module.exports = router;
