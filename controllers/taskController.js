@@ -61,7 +61,7 @@ exports.create = async (req, res, next) => {
         title: value.title,
         isCompleted: value.isCompleted,
         priority: value.priority,
-        userId: global.user_id,
+        userId:  req.user.id,
       },
     });
 
@@ -85,7 +85,7 @@ exports.index = async (req, res, next) => {
 
     // Filter tasks by the logged-in user.
     const where = {
-      userId: global.user_id,
+      userId: req.user.id,
     };
 
     // Optionally search task titles, ignoring letter case.
@@ -160,7 +160,7 @@ exports.show = async (req, res, next) => {
       where: {
         id_userId: {
           id: taskId,
-          userId: global.user_id,
+          userId: req.user.id,
         },
       },
       select: {
@@ -243,7 +243,7 @@ exports.update = async (req, res, next) => {
         where: {
           id_userId: {
             id: taskId,
-            userId: global.user_id,
+            userId: req.user.id,
           },
         },
         data: updates,
@@ -289,7 +289,7 @@ exports.deleteTask = async (req, res, next) => {
         where: {
           id_userId: {
             id: taskId,
-            userId: global.user_id,
+            userId: req.user.id,
           },
         },
       });
@@ -341,7 +341,7 @@ exports.bulkCreate = async (req, res, next) => {
         title: value.title,
         isCompleted: value.isCompleted,
         priority: value.priority,
-        userId: global.user_id,
+        userId:req.user.id,
       });
     }
 
