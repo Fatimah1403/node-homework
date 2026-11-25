@@ -3,7 +3,6 @@ const crypto = require("crypto");
 const util = require("util");
 const { userSchema } = require("../validation/userSchema");
 const prisma = require("../db/prisma");
-
 const scrypt = util.promisify(crypto.scrypt);
 
 async function hashPassword(password) {
@@ -46,6 +45,7 @@ async function comparePassword(password, storedHash) {
 
 // REGISTER
 
+// REGISTER
 async function register(req, res, next) {
   try {
     // Validate the request before storing user data.
@@ -62,50 +62,85 @@ async function register(req, res, next) {
     }
 
     const { name, email, password } = value;
-    // Hash the password before saving the user.
+
+    // Hash the password before starting the transaction.
     const hashedPassword = await hashPassword(password);
 
-    let newUser;
-
-
-   try {
-      // Create the user using Prisma instead of raw SQL.
-      newUser = await prisma.user.create({
+    // Create the user and welcome tasks as one atomic operation.
+    const result = await prisma.$transaction(async (tx) => {
+      const newUser = await tx.user.create({
         data: {
-          email,
           name,
+          email,
           hashedPassword,
         },
         select: {
           id: true,
-          email: true,
           name: true,
+          email: true,
         },
       });
-    } catch (error) {
-      // Prisma error P2002 means a UNIQUE constraint was violated.
-      if (error.code === "P2002") {
-        return res.status(400).json({
-          message: "Email already registered.",
-        });
-      }
 
-      // Pass unexpected database errors to Express.
-      if (typeof next === "function") {
-        return next(error);
-      }
+      // Define the three welcome tasks.
+      const welcomeTaskData = [
+        {
+          title: "Complete your profile",
+          priority: "medium",
+          userId: newUser.id,
+        },
+        {
+          title: "Add your first task",
+          priority: "high",
+          userId: newUser.id,
+        },
+        {
+          title: "Explore the app",
+          priority: "low",
+          userId: newUser.id,
+        },
+      ];
 
-      throw error;
-    }
+      // Insert all three tasks in the same transaction.
+      await tx.task.createMany({
+        data: welcomeTaskData,
+      });
 
-    // Store the user ID for task ownership checks.
-    global.user_id = newUser.id;
+      // Retrieve the created welcome tasks.
+      const welcomeTasks = await tx.task.findMany({
+        where: {
+          userId: newUser.id,
+        },
+        select: {
+          id: true,
+          title: true,
+          isCompleted: true,
+          priority: true,
+          userId: true,
+        },
+      });
+
+      return {
+        user: newUser,
+        welcomeTasks,
+      };
+    });
+
+    // Store the user ID only after the transaction succeeds.
+    global.user_id = result.user.id;
 
     return res.status(201).json({
-      name: newUser.name,
-      email: newUser.email,
+      user: result.user,
+      welcomeTasks: result.welcomeTasks,
+      transactionStatus: "success",
     });
   } catch (error) {
+    // Prisma P2002 means a unique constraint was violated.
+    if (error.code === "P2002") {
+      return res.status(400).json({
+        message: "Email already registered.",
+      });
+    }
+
     if (typeof next === "function") {
       return next(error);
     }
@@ -119,16 +154,14 @@ async function logon(req, res, next) {
   try {
     const { email, password } = req.body || {};
 
-    if (
-      typeof email !== "string" ||
-      typeof password !== "string"
-    ) {
+    if (typeof email !== "string" ||
+        typeof password !== "string") {
       return res.status(401).json({
         message: "Invalid email or password.",
       });
     }
 
-    // Find the user in PostgreSQL through Prisma by email.
+    // Find the user in PostgreSQL  by email.
     const user = await prisma.user.findUnique({
       where: {
         email: email.trim().toLowerCase(),
@@ -156,7 +189,6 @@ async function logon(req, res, next) {
     if (typeof next === "function") {
       return next(error);
     }
-
     throw error;
   }
 }
@@ -173,10 +205,8 @@ function logoff(req, res, next) {
     if (typeof next === "function") {
       return next(error);
     }
-
     throw error;
   }
 }
-
 
 module.exports = { register, logon, logoff };
