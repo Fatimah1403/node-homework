@@ -1,10 +1,36 @@
 
 const crypto = require("crypto");
+const { randomUUID } = require("crypto");
+const jwt = require("jsonwebtoken");
 const util = require("util");
 const { userSchema } = require("../validation/userSchema");
 const prisma = require("../db/prisma");
 const scrypt = util.promisify(crypto.scrypt);
 
+
+const cookieFlags = (req) => {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "Strict",
+  };
+};
+const setJwtCookie = (req, res, user) => {
+  // Sign JWT
+  const payload = { id: user.id, csrfToken: randomUUID() };
+
+  const token = jwt.sign(payload, process.env.JWT_SECRET, {
+    expiresIn: "1h",
+  });
+
+  // Set cookie
+  res.cookie("jwt", token, {
+    ...cookieFlags(req),
+    maxAge: 3600000,
+  });
+
+  return payload.csrfToken;
+};
 async function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString("hex");
 
@@ -126,9 +152,12 @@ async function register(req, res, next) {
     });
 
     // Store the user ID only after the transaction succeeds.
-    global.user_id = result.user.id;
+    const csrfToken = setJwtCookie(req, res, result.user);
 
     return res.status(201).json({
+      name: result.user.name,
+      email: result.user.email,
+      csrfToken,
       user: result.user,
       welcomeTasks: result.welcomeTasks,
       transactionStatus: "success",
@@ -179,11 +208,12 @@ async function logon(req, res, next) {
       });
     }
 
-    global.user_id = user.id;
+    const csrfToken = setJwtCookie(req, res, user);
 
     return res.status(200).json({
       name: user.name,
       email: user.email,
+      csrfToken,
     });
   } catch (error) {
     if (typeof next === "function") {
@@ -196,7 +226,8 @@ async function logon(req, res, next) {
 // LOGOFF
 function logoff(req, res, next) {
   try {
-    global.user_id = null;
+    // Clear the authentication cookie.
+    res.clearCookie("jwt", cookieFlags(req));
 
     return res.status(200).json({
       message: "User logged off successfully.",

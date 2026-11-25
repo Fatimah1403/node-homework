@@ -1,22 +1,46 @@
 const express = require("express");
 const prisma = require("./db/prisma");
+const cookieParser = require("cookie-parser");
+
+// Security middleware packages
+const helmet = require("helmet");
+const { xss } = require("express-xss-sanitizer");
+const rateLimiter = require("express-rate-limit");
 
 const timeRouter = require("./routes/timeRoutes");
 const userRouter = require("./routes/userRoutes");
 const notFound = require("./middleware/not-found");
 const errorHandler = require("./middleware/error-handler");
-const authMiddleware = require("./middleware/auth");
+const jwtMiddleware = require("./middleware/jwtMiddleware");
 const taskRouter = require("./routes/taskRoutes");
 const analyticsRouter = require("./routes/analyticsRoutes");
 
 
 
 const app = express();
+// Configure proxy trust
+app.set("trust proxy", 1);
 
-global.user_id = null;
+// 1. Rate limiting
+app.use(
+  rateLimiter({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+  })
+);
 
+// 2. Security response headers
+app.use(helmet());
 
+// 3. Parse incoming request data
 app.use(express.json());
+app.use(cookieParser());
+
+// 4. Sanitize incoming request data
+app.use(xss());
+
+
+
 
 app.get("/", (req, res) => {
   res.send("Hello, World!");
@@ -47,8 +71,8 @@ app.post("/testpost", (req, res) => {
 
 app.use("/api", timeRouter);
 app.use("/api/users", userRouter);
-app.use("/api/tasks", authMiddleware, taskRouter);
-app.use("/api/analytics", authMiddleware, analyticsRouter);
+app.use("/api/tasks", jwtMiddleware, taskRouter);
+app.use("/api/analytics", jwtMiddleware, analyticsRouter);
 
 
 app.use(notFound);
